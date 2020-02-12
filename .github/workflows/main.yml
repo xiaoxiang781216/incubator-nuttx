@@ -1,0 +1,49 @@
+name: PR Check CI
+
+on:
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+
+    runs-on: ubuntu-18.04
+
+    steps:
+    - name: Checkout nuttx repo
+      uses: actions/checkout@v2
+      with:
+        path: nuttx
+
+    - name: Check PR
+      run: |
+        cd nuttx
+        git fetch --prune --unshallow
+        git log --oneline -5
+        ranges=`git log -1 --merges --pretty=format:%P | awk -F" " '{ print $1 ".." $2 }'`
+        commits=`git log --reverse --format=format:%H $ranges`
+        ./tools/checkpatch.sh -c $commits
+
+    - name: Checkout apps repo
+      uses: actions/checkout@v2
+      with:
+        repository: apache/incubator-nuttx-apps
+        path: apps
+
+    - name: Checkout testing repo
+      uses: actions/checkout@v2
+      with:
+        repository: apache/incubator-nuttx-testing
+        path: testing
+
+    - name: Install tools
+      run: |
+        sudo dpkg --add-architecture i386
+        sudo apt-get -y update
+        sudo apt-get -y install automake bison build-essential flex gperf
+        sudo apt-get -y install lib32ncurses5-dev libc6-dev-i386 libx11-dev:i386 libxext-dev:i386
+
+    - name: Run builds
+      run: |
+        ./testing/cibuild.sh -i -b check

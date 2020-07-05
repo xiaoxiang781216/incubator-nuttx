@@ -70,13 +70,9 @@
 #define STACK_ALIGN_DOWN(a) ((a) & ~STACK_ALIGN_MASK)
 #define STACK_ALIGN_UP(a)   (((a) + STACK_ALIGN_MASK) & ~STACK_ALIGN_MASK)
 
-/****************************************************************************
- * Private Types
- ****************************************************************************/
+/* Stack margin for idle thread coloring */
 
-/****************************************************************************
- * Private Function Prototypes
- ****************************************************************************/
+#define STACK_MARGIN_IDLE   (CONFIG_IDLETHREAD_STACKSIZE / 4)
 
 /****************************************************************************
  * Public Functions
@@ -133,6 +129,25 @@ int up_use_stack(struct tcb_s *tcb, void *stack, size_t stack_size)
   /* Save the new stack allocation */
 
   tcb->stack_alloc_ptr = stack;
+
+  /* If stack debug is enabled, then fill the stack with a recognizable value
+   * that we can use later to test for high water marks.
+   */
+
+#ifdef CONFIG_STACK_COLORATION
+  if (tcb->pid == 0)
+    {
+      /* The whole idle thread stack can't be colored here
+       * because the code is running on the idle thead now.
+       */
+
+      memset(tcb->stack_alloc_ptr, 0xaa, stack_size - STACK_MARGIN_IDLE);
+    }
+  else
+    {
+      memset(tcb->stack_alloc_ptr, 0xaa, stack_size);
+    }
+#endif
 
   /* MIPS uses a push-down stack:  the stack grows toward loweraddresses in
    * memory.  The stack pointer register, points to the lowest, valid work

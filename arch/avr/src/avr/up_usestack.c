@@ -52,12 +52,12 @@
 #include "up_internal.h"
 
 /****************************************************************************
- * Private Types
+ * Pre-processor Macros
  ****************************************************************************/
 
-/****************************************************************************
- * Private Function Prototypes
- ****************************************************************************/
+/* Stack margin for idle thread coloring */
+
+#define STACK_MARGIN_IDLE   (CONFIG_IDLETHREAD_STACKSIZE / 4)
 
 /****************************************************************************
  * Public Functions
@@ -119,7 +119,19 @@ int up_use_stack(struct tcb_s *tcb, void *stack, size_t stack_size)
    */
 
 #ifdef CONFIG_STACK_COLORATION
-  memset(tcb->stack_alloc_ptr, STACK_COLOR, stack_size);
+  if (tcb->pid == 0)
+    {
+      /* The whole idle thread stack can't be colored here
+       * because the code is running on the idle thead now.
+       */
+
+      memset(tcb->stack_alloc_ptr,
+             STACK_COLOR, stack_size - STACK_MARGIN_IDLE);
+    }
+  else
+    {
+      memset(tcb->stack_alloc_ptr, STACK_COLOR, stack_size);
+    }
 #endif
 
   /* The AVR uses a push-down stack:  the stack grows toward loweraddresses

@@ -153,11 +153,54 @@ int up_use_stack(struct tcb_s *tcb, void *stack, size_t stack_size)
   if (tcb->pid == 0)
     {
       /* The whole idle thread stack can't be colored here
-       * because the code is running on the idle thead now.
+       * because the code is running on the idle thread now.
+       *
+       * So let's see what we can do
        */
 
+
+      /* Some address on stack */
+
+      volatile uint32_t marker1;
+
+      /* Use register based variables */
+
+      register volatile uint32_t *sp;
+      register uint32_t size;
+
+      /* Another address on stack */
+
+      volatile uint32_t marker2;
+
+      /* Assume we can not get a better value. */
+
+      size = tcb->adj_stack_size - STACK_MARGIN_IDLE;
+
+      /* point to the lower or the 2 address on the stack */
+
+      sp   = (&marker1 > &marker2) ? &marker2 : &marker1;
+
+
+      /* Do a sanity check,
+       * a) markers 1 and 2 are not the same
+       * b) markers 1 and 2 are next each other (nothing in between)
+       * c) sp is on this stack (no odd reloc)
+       */
+
+      if (&marker1 != &marker2 &&
+          sizeof(uint32_t) == (&marker1 > &marker2 ?
+                              (uint8_t *)&marker1 - (uint8_t *)&marker2 :
+                              (uint8_t *)&marker2 - (uint8_t *)&marker1) &&
+                              (sp > (volatile uint32_t *)stack &&
+                              sp < (volatile uint32_t *) tcb->adj_stack_ptr) &&
+              (uintptr_t)sp  - (uintptr_t)stack >  size)
+        {
+          /* Use the batter value */
+
+          size = (uintptr_t) sp - (uintptr_t)stack;
+        }
       arm_stack_color((FAR void *)((uintptr_t)tcb->adj_stack_ptr -
-          tcb->adj_stack_size), tcb->adj_stack_size - STACK_MARGIN_IDLE);
+          tcb->adj_stack_size), size);
     }
   else
     {

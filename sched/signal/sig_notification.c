@@ -28,6 +28,7 @@
 #include <string.h>
 #include <signal.h>
 #include <debug.h>
+#include <errno.h>
 
 #include <nuttx/signal.h>
 

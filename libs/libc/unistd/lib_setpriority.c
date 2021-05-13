@@ -24,8 +24,8 @@
 
 #include <nuttx/config.h>
 #include <sched.h>
-
 #include <errno.h>
+#include <unistd.h>
 
 /****************************************************************************
  * Public Functions

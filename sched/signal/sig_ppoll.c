@@ -25,6 +25,7 @@
 #include <nuttx/config.h>
 
 #include <poll.h>
+#include <errno.h>
 
 #include "sched/sched.h"
 #include "signal/signal.h"

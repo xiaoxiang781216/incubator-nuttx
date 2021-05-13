@@ -27,6 +27,7 @@
 #include <stdint.h>
 #include <sched.h>
 #include <debug.h>
+#include <errno.h>
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>

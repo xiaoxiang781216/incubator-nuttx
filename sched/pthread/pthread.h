@@ -31,9 +31,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <pthread.h>
-#include <sched.h>
 
 #include <nuttx/compiler.h>
+#include <nuttx/sched.h>
 
 /****************************************************************************
  * Public Type Declarations

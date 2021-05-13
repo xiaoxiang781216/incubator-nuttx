@@ -51,6 +51,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <assert.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>

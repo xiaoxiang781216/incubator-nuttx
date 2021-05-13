@@ -27,6 +27,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <debug.h>
+#include <errno.h>
 
 #include <nuttx/kmalloc.h>
 #include <nuttx/drivers/ramdisk.h>

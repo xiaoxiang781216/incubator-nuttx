@@ -44,9 +44,11 @@
 #define RPMSG_RTC_SET               0
 #define RPMSG_RTC_GET               1
 #define RPMSG_RTC_ALARM_SET         2
-#define RPMSG_RTC_ALARM_CANCEL      3
-#define RPMSG_RTC_ALARM_FIRE        4
-#define RPMSG_RTC_SYNC              5
+#define RPMSG_RTC_ALARM_RELATIVE    3
+#define RPMSG_RTC_ALARM_PERIOD      4
+#define RPMSG_RTC_ALARM_CANCEL      5
+#define RPMSG_RTC_ALARM_FIRE        6
+#define RPMSG_RTC_SYNC              7
 
 /****************************************************************************
  * Private Types
@@ -75,6 +77,9 @@ begin_packed_struct struct rpmsg_rtc_alarm_set_s
   int32_t                   nsec;
   int32_t                   id;
 } end_packed_struct;
+
+#define rpmsg_rtc_alarm_relative_s rpmsg_rtc_alarm_set_s
+#define rpmsg_rtc_alarm_period rpmsg_rtc_alarm_set_s
 
 begin_packed_struct struct rpmsg_rtc_alarm_cancel_s
 {
@@ -111,7 +116,13 @@ struct rpmsg_rtc_lowerhalf_s
   struct work_s              syncwork;
 
 #ifdef CONFIG_RTC_ALARM
-  struct lower_setalarm_s    alarminfo[CONFIG_RTC_NALARMS];
+  rtc_alarm_callback_t       alarmcb[CONFIG_RTC_NALARMS];
+  FAR void                  *alarmpriv[CONFIG_RTC_NALARMS];
+#endif
+
+#ifdef CONFIG_RTC_PERIODIC
+  rtc_alarm_callback_t       periodcb;
+  FAR void                  *periodpriv[CONFIG_RTC_NALARMS];
 #endif
 };
 #else
@@ -162,6 +173,14 @@ static int rpmsg_rtc_cancelalarm(FAR struct rtc_lowerhalf_s *lower,
 static int rpmsg_rtc_rdalarm(FAR struct rtc_lowerhalf_s *lower_,
               FAR struct lower_rdalarm_s *alarminfo);
 #endif
+
+#ifdef CONFIG_RTC_PERIODIC
+static int rpmsg_rtc_setperiodic(FAR struct rtc_lowerhalf_s *lower,
+              FAR const struct lower_setperiodic_s *alarminfo);
+
+static int rpmsg_rtc_cancelperiodic(
+              FAR struct rtc_lowerhalf_s *lower, int alarmid);
+#endif
 #else
 static int rpmsg_rtc_server_rdtime(FAR struct rtc_lowerhalf_s *lower,
                                    FAR struct rtc_time *rtctime);
@@ -187,10 +206,12 @@ static int rpmsg_rtc_server_setperiodic(FAR struct rtc_lowerhalf_s *lower,
 static int rpmsg_rtc_server_cancelperiodic(
               FAR struct rtc_lowerhalf_s *lower, int alarmid);
 #endif
+
 #ifdef CONFIG_RTC_IOCTL
 static int rpmsg_rtc_server_ioctl(FAR struct rtc_lowerhalf_s *lower,
               int cmd, unsigned long arg);
 #endif
+
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
 static int rpmsg_rtc_server_destroy(FAR struct rtc_lowerhalf_s *lower);
 #endif
@@ -211,6 +232,10 @@ static const struct rtc_ops_s g_rpmsg_rtc_ops =
   rpmsg_rtc_setrelative,
   rpmsg_rtc_cancelalarm,
   rpmsg_rtc_rdalarm,
+#endif
+#ifdef CONFIG_RTC_PERIODIC
+  rpmsg_rtc_setperiodic,
+  rpmsg_rtc_cancelperiodic,
 #endif
 };
 #else
@@ -453,6 +478,17 @@ static int rpmsg_rtc_rdalarm(FAR struct rtc_lowerhalf_s *lower_,
 
   *alarminfo->time = lower->alarminfo[alarminfo->id].time;
   return 0;
+}
+#endif
+#ifdef CONFIG_RTC_PERIODIC
+static int rpmsg_rtc_setperiodic(FAR struct rtc_lowerhalf_s *lower,
+              FAR const struct lower_setperiodic_s *alarminfo)
+{
+}
+
+static int rpmsg_rtc_cancelperiodic(
+              FAR struct rtc_lowerhalf_s *lower, int alarmid)
+{
 }
 #endif
 #else

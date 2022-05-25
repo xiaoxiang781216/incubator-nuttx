@@ -149,24 +149,6 @@ int group_allocate(FAR struct task_tcb_s *tcb, uint8_t ttype)
     {
       group->tg_flags |= GROUP_FLAG_PRIVILEGED;
     }
-
-# if defined(CONFIG_FILE_STREAM)
-  /* In a flat, single-heap build.  The stream list is allocated with the
-   * group structure.  But in a kernel build with a kernel allocator, it
-   * must be separately allocated using a user-space allocator.
-   *
-   * REVISIT:  Kernel threads should not require a stream allocation.  They
-   * should not be using C buffered I/O at all.
-   */
-
-  group->tg_streamlist = (FAR struct streamlist *)
-    group_zalloc(group, sizeof(struct streamlist));
-  if (!group->tg_streamlist)
-    {
-      goto errout_with_group;
-    }
-
-# endif /* defined(CONFIG_FILE_STREAM) */
 #endif /* defined(CONFIG_MM_KERNEL_HEAP) */
 
 #ifdef HAVE_GROUP_MEMBERS
@@ -237,10 +219,6 @@ errout_with_member:
 #ifdef HAVE_GROUP_MEMBERS
   kmm_free(group->tg_members);
 errout_with_stream:
-#endif
-#if defined(CONFIG_FILE_STREAM) && defined(CONFIG_MM_KERNEL_HEAP)
-  group_free(group, group->tg_streamlist);
-errout_with_group:
 #endif
   kmm_free(group);
   return ret;

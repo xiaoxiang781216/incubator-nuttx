@@ -137,6 +137,9 @@ struct task_info_s
 #if CONFIG_LIBC_MAX_EXITFUNS > 0
   struct atexit_list_s ta_exit; /* Exit functions */
 #endif
+#ifdef CONFIG_FILE_STREAM
+  struct streamlist ta_streamlist; /* Holds C buffered I/O info */
+#endif
 };
 
 /* struct pthread_cleanup_s *************************************************/

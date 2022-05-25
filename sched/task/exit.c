@@ -68,12 +68,6 @@ void _exit(int status)
   group_kill_children(tcb);
 #endif
 
-#if !defined(CONFIG_DISABLE_PTHREAD) && !defined(CONFIG_PTHREAD_MUTEX_UNSAFE)
-  /* Recover any mutexes still held by the canceled thread */
-
-  pthread_mutex_inconsistent(tcb);
-#endif
-
   /* Perform common task termination logic.  This will get called again later
    * through logic kicked off by up_exit().  However, we need to call it here
    * so that we can flush buffered I/O (both of which may required

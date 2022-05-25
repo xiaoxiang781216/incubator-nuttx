@@ -145,12 +145,7 @@ int nxtask_exit(void)
 
   rtcb->task_state = TSTATE_TASK_READYTORUN;
 
-  /* Move the TCB to the specified blocked task list and delete it.  Calling
-   * nxtask_terminate with non-blocking true will suppress atexit() and
-   * on-exit() calls and will cause buffered I/O to fail to be flushed.  The
-   * former is required _exit() behavior; the latter is optional _exit()
-   * behavior.
-   */
+  /* Move the TCB to the specified blocked task list and delete it. */
 
   nxsched_add_blocked(dtcb, TSTATE_TASK_INACTIVE);
 
@@ -165,7 +160,7 @@ int nxtask_exit(void)
   rtcb->irqcount++;
 #endif
 
-  ret = nxtask_terminate(dtcb->pid, true);
+  ret = nxtask_terminate(dtcb->pid);
 
 #ifdef CONFIG_SMP
   rtcb->irqcount--;

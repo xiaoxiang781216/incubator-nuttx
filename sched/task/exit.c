@@ -68,13 +68,5 @@ void _exit(int status)
   group_kill_children(tcb);
 #endif
 
-  /* Perform common task termination logic.  This will get called again later
-   * through logic kicked off by up_exit().  However, we need to call it here
-   * so that we can flush buffered I/O (both of which may required
-   * suspending). This will be fixed later when I/O flush is moved to libc.
-   */
-
-  nxtask_exithook(tcb, status, false);
-
   up_exit(status);
 }

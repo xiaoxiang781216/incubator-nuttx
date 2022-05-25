@@ -90,15 +90,6 @@ void nx_pthread_exit(FAR void *exit_value)
       exit(EXIT_FAILURE);
     }
 
-  /* Perform common task termination logic.  This will get called again later
-   * through logic kicked off by _exit().  However, we need to call it before
-   * calling _exit() in order certain operations if this is the last thread
-   * of a task group:  (2) To handle atexit() and on_exit() callbacks and
-   * (2) so that we can flush buffered I/O (which may required suspending).
-   */
-
-  nxtask_exithook(tcb, EXIT_SUCCESS, false);
-
   /* Then just exit, retaining all file descriptors and without
    * calling atexit() functions.
    */

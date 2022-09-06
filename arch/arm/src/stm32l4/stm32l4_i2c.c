@@ -274,6 +274,7 @@
 #include <nuttx/arch.h>
 #include <nuttx/irq.h>
 #include <nuttx/clock.h>
+#include <nuttx/mutex.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/kmalloc.h>
 #include <nuttx/power/pm.h>
@@ -431,7 +432,7 @@ struct stm32l4_i2c_priv_s
   const struct stm32l4_i2c_config_s *config;
 
   int refs;                    /* Reference count */
-  sem_t sem_excl;              /* Mutual exclusion semaphore */
+  mutex_t lock_excl;           /* Mutual exclusion mutex */
 #ifndef CONFIG_I2C_POLLED
   sem_t sem_isr;               /* Interrupt wait semaphore */
 #endif
@@ -495,9 +496,6 @@ static inline
 int  stm32l4_i2c_sem_waitdone(struct stm32l4_i2c_priv_s *priv);
 static inline
 void stm32l4_i2c_sem_waitstop(struct stm32l4_i2c_priv_s *priv);
-static inline void stm32l4_i2c_sem_post(struct i2c_master_s *dev);
-static inline void stm32l4_i2c_sem_init(struct i2c_master_s *dev);
-static inline void stm32l4_i2c_sem_destroy(struct i2c_master_s *dev);
 #ifdef CONFIG_I2C_TRACE
 static void stm32l4_i2c_tracereset(struct stm32l4_i2c_priv_s *priv);
 static void stm32l4_i2c_tracenew(struct stm32l4_i2c_priv_s *priv,
@@ -1067,58 +1065,6 @@ void stm32l4_i2c_sem_waitstop(struct stm32l4_i2c_priv_s *priv)
    */
 
   i2cinfo("Timeout with CR: %04" PRIx32 " SR: %04" PRIx32 "\n", cr, sr);
-}
-
-/****************************************************************************
- * Name: stm32l4_i2c_sem_post
- *
- * Description:
- *   Release the mutual exclusion semaphore
- *
- ****************************************************************************/
-
-static inline void stm32l4_i2c_sem_post(struct i2c_master_s *dev)
-{
-  nxsem_post(&((struct stm32l4_i2c_inst_s *)dev)->priv->sem_excl);
-}
-
-/****************************************************************************
- * Name: stm32l4_i2c_sem_init
- *
- * Description:
- *   Initialize semaphores
- *
- ****************************************************************************/
-
-static inline void stm32l4_i2c_sem_init(struct i2c_master_s *dev)
-{
-  nxsem_init(&((struct stm32l4_i2c_inst_s *)dev)->priv->sem_excl, 0, 1);
-
-#ifndef CONFIG_I2C_POLLED
-  /* This semaphore is used for signaling and, hence, should not have
-   * priority inheritance enabled.
-   */
-
-  nxsem_init(&((struct stm32l4_i2c_inst_s *)dev)->priv->sem_isr, 0, 0);
-  nxsem_set_protocol(&((struct stm32l4_i2c_inst_s *)dev)->priv->sem_isr,
-                    SEM_PRIO_NONE);
-#endif
-}
-
-/****************************************************************************
- * Name: stm32l4_i2c_sem_destroy
- *
- * Description:
- *   Destroy semaphores.
- *
- ****************************************************************************/
-
-static inline void stm32l4_i2c_sem_destroy(struct i2c_master_s *dev)
-{
-  nxsem_destroy(&((struct stm32l4_i2c_inst_s *)dev)->priv->sem_excl);
-#ifndef CONFIG_I2C_POLLED
-  nxsem_destroy(&((struct stm32l4_i2c_inst_s *)dev)->priv->sem_isr);
-#endif
 }
 
 /****************************************************************************
@@ -2703,7 +2649,7 @@ static int stm32l4_i2c_process(struct i2c_master_s *dev,
   /* Dump the trace result */
 
   stm32l4_i2c_tracedump(priv);
-  stm32l4_i2c_sem_post(dev);
+  nxmutex_unlock(&priv->lock_excl);
 
   return -errval;
 }
@@ -2724,7 +2670,7 @@ static int stm32l4_i2c_transfer(struct i2c_master_s *dev,
 
   /* Ensure that address or flags don't change meanwhile */
 
-  ret = nxsem_wait(&((struct stm32l4_i2c_inst_s *)dev)->priv->sem_excl);
+  ret = nxmutex_lock(&((struct stm32l4_i2c_inst_s *)dev)->priv->lock_excl);
   if (ret >= 0)
     {
       ret = stm32l4_i2c_process(dev, msgs, count);
@@ -2764,7 +2710,7 @@ static int stm32l4_i2c_reset(struct i2c_master_s * dev)
 
   /* Lock out other clients */
 
-  ret = nxsem_wait_uninterruptible(&priv->sem_excl);
+  ret = nxmutex_lock(&priv->lock_excl);
   if (ret < 0)
     {
       return ret;
@@ -2861,7 +2807,7 @@ out:
 
   /* Release the port for re-use by other clients */
 
-  stm32l4_i2c_sem_post(dev);
+  nxmutex_unlock(&priv->lock_excl);
   return ret;
 }
 #endif /* CONFIG_I2C_RESET */
@@ -2902,7 +2848,6 @@ static int stm32l4_i2c_pm_prepare(struct pm_callback_s *cb, int domain,
   struct stm32l4_i2c_priv_s *priv =
                            (struct stm32l4_i2c_priv_s *)((char *)cb -
                             offsetof(struct stm32l4_i2c_priv_s, pm_cb));
-  int sval;
 
   /* Logic to prepare for a reduced power state goes here. */
 
@@ -2917,13 +2862,7 @@ static int stm32l4_i2c_pm_prepare(struct pm_callback_s *cb, int domain,
 
       /* Check if exclusive lock for I2C bus is held. */
 
-      if (nxsem_get_value(&priv->sem_excl, &sval) < 0)
-        {
-          DEBUGPANIC();
-          return -EINVAL;
-        }
-
-      if (sval <= 0)
+      if (nxmutex_is_locked(&priv->lock_excl))
         {
           /* Exclusive lock is held, do not allow entry to deeper PM
            * states.
@@ -3014,7 +2953,16 @@ struct i2c_master_s *stm32l4_i2cbus_initialize(int port)
 
   if ((volatile int)priv->refs++ == 0)
     {
-      stm32l4_i2c_sem_init((struct i2c_master_s *)inst);
+      nxmutex_init(&priv->lock_excl);
+
+#ifndef CONFIG_I2C_POLLED
+      /* This semaphore is used for signaling and, hence, should not have
+      * priority inheritance enabled.
+      */
+
+      nxsem_init(&priv->sem_isr, 0, 0);
+      nxsem_set_protocol(&priv->sem_isr, SEM_PRIO_NONE);
+#endif
       stm32l4_i2c_init(priv);
 
 #ifdef CONFIG_PM
@@ -3038,7 +2986,7 @@ struct i2c_master_s *stm32l4_i2cbus_initialize(int port)
  *
  ****************************************************************************/
 
-int stm32l4_i2cbus_uninitialize(struct i2c_master_s * dev)
+int stm32l4_i2cbus_uninitialize(struct i2c_master_s *dev)
 {
   irqstate_t irqs;
 
@@ -3074,7 +3022,10 @@ int stm32l4_i2cbus_uninitialize(struct i2c_master_s * dev)
 
   /* Release unused resources */
 
-  stm32l4_i2c_sem_destroy((struct i2c_master_s *)dev);
+  nxmutex_destroy(&((struct stm32l4_i2c_inst_s *)dev)->priv->lock_excl);
+#ifndef CONFIG_I2C_POLLED
+  nxsem_destroy(&((struct stm32l4_i2c_inst_s *)dev)->priv->sem_isr);
+#endif
 
   kmm_free(dev);
   return OK;

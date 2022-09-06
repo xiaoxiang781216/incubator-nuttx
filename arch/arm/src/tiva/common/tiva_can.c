@@ -2323,7 +2323,6 @@ static int  tivacan_initfilter(struct can_dev_s *dev,
     }
 
   nxmutex_unlock(&canmod->thd_iface_mtx);
-
   return OK;
 }
 

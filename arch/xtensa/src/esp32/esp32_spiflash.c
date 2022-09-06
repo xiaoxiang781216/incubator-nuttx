@@ -36,7 +36,7 @@
 
 #include <nuttx/arch.h>
 #include <nuttx/init.h>
-#include <nuttx/semaphore.h>
+#include <nuttx/mutex.h>
 #include <nuttx/mtd/mtd.h>
 
 #include "xtensa.h"
@@ -302,7 +302,7 @@ static struct esp32_spiflash_s g_esp32_spiflash1_encrypt =
 
 /* Enxusre exculisve access to the driver */
 
-static sem_t g_exclsem = SEM_INITIALIZER(1);
+static mutex_t g_excllock = NXMUTEX_INITIALIZER;
 
 /****************************************************************************
  * Private Functions
@@ -1499,7 +1499,7 @@ static int esp32_erase(struct mtd_dev_s *dev, off_t startblock,
   finfo("esp32_erase(%p, %d, %d)\n", dev, startblock, nblocks);
 #endif
 
-  ret = nxsem_wait(&g_exclsem);
+  ret = nxmutex_lock(&g_excllock);
   if (ret < 0)
     {
       return ret;
@@ -1507,8 +1507,7 @@ static int esp32_erase(struct mtd_dev_s *dev, off_t startblock,
 
   ret = esp32_erasesector(priv, addr, size);
 
-  nxsem_post(&g_exclsem);
-
+  nxmutex_unlock(&g_excllock);
   if (ret == OK)
     {
       ret = nblocks;
@@ -1548,9 +1547,9 @@ static ssize_t esp32_read(struct mtd_dev_s *dev, off_t offset,
   finfo("esp32_read(%p, 0x%x, %d, %p)\n", dev, offset, nbytes, buffer);
 #endif
 
-  /* Acquire the semaphore. */
+  /* Acquire the mutex. */
 
-  ret = nxsem_wait(&g_exclsem);
+  ret = nxmutex_lock(&g_excllock);
   if (ret < 0)
     {
       goto error_with_buffer;
@@ -1559,8 +1558,7 @@ static ssize_t esp32_read(struct mtd_dev_s *dev, off_t offset,
   esp32_set_read_opt(priv);
   ret = esp32_readdata(priv, offset, buffer, nbytes);
 
-  nxsem_post(&g_exclsem);
-
+  nxmutex_unlock(&g_excllock);
   if (ret == OK)
     {
       ret = nbytes;
@@ -1650,9 +1648,9 @@ static ssize_t esp32_read_decrypt(struct mtd_dev_s *dev,
         dev, offset, nbytes, buffer);
 #endif
 
-  /* Acquire the semaphore. */
+  /* Acquire the mutex. */
 
-  ret = nxsem_wait(&g_exclsem);
+  ret = nxmutex_lock(&g_excllock);
   if (ret < 0)
     {
       goto error_with_buffer;
@@ -1660,8 +1658,7 @@ static ssize_t esp32_read_decrypt(struct mtd_dev_s *dev,
 
   ret = esp32_readdata_encrypted(priv, offset, tmpbuff, nbytes);
 
-  nxsem_post(&g_exclsem);
-
+  nxmutex_unlock(&g_excllock);
   if (ret == OK)
     {
       ret = nbytes;
@@ -1755,9 +1752,9 @@ static ssize_t esp32_write(struct mtd_dev_s *dev, off_t offset,
   finfo("esp32_write(%p, 0x%x, %d, %p)\n", dev, offset, nbytes, buffer);
 #endif
 
-  /* Acquire the semaphore. */
+  /* Acquire the mutex. */
 
-  ret = nxsem_wait(&g_exclsem);
+  ret = nxmutex_lock(&g_excllock);
   if (ret < 0)
     {
       goto error_with_buffer;
@@ -1765,8 +1762,7 @@ static ssize_t esp32_write(struct mtd_dev_s *dev, off_t offset,
 
   ret = esp32_writedata(priv, offset, buffer, nbytes);
 
-  nxsem_post(&g_exclsem);
-
+  nxmutex_unlock(&g_excllock);
   if (ret == OK)
     {
       ret = nbytes;
@@ -1858,7 +1854,7 @@ static ssize_t esp32_bwrite_encrypt(struct mtd_dev_s *dev,
         dev, startblock, nblocks, buffer);
 #endif
 
-  ret = nxsem_wait(&g_exclsem);
+  ret = nxmutex_lock(&g_excllock);
   if (ret < 0)
     {
       goto error_with_buffer;
@@ -1866,8 +1862,7 @@ static ssize_t esp32_bwrite_encrypt(struct mtd_dev_s *dev,
 
   ret = esp32_writedata_encrypted(priv, addr, buffer, size);
 
-  nxsem_post(&g_exclsem);
-
+  nxmutex_unlock(&g_excllock);
   if (ret == OK)
     {
       ret = nblocks;

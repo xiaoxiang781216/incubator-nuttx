@@ -38,6 +38,7 @@
 #include <nuttx/arch.h>
 #include <nuttx/irq.h>
 #include <nuttx/clock.h>
+#include <nuttx/mutex.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/spinlock.h>
 #include <nuttx/spi/spi.h>
@@ -157,7 +158,7 @@ struct esp32s3_spi_priv_s
 
   const struct esp32s3_spi_config_s *config;
   int refs;             /* Reference count */
-  sem_t exclsem;        /* Held while chip is selected for mutual exclusion */
+  mutex_t excllock;     /* Held while chip is selected for mutual exclusion */
 #ifdef CONFIG_ESP32S3_SPI2_DMA
   sem_t sem_isr;        /* Interrupt wait semaphore */
   int cpu;              /* CPU ID */
@@ -297,9 +298,9 @@ static struct esp32s3_spi_priv_s esp32s3_spi2_priv =
                 },
   .config      = &esp32s3_spi2_config,
   .refs        = 0,
-  .exclsem     = SEM_INITIALIZER(0),
+  .excllock    = NXMUTEX_INITIALIZER,
 #ifdef CONFIG_ESP32S3_SPI2_DMA
-  .sem_isr     = SEM_INITIALIZER(0),
+  .sem_isr     = NXSEM_INITIALIZER(0, PRIOINHERIT_FLAGS_DISABLE),
   .cpuint      = -ENOMEM,
   .dma_channel = -1,
 #endif
@@ -372,7 +373,7 @@ static struct esp32s3_spi_priv_s esp32s3_spi3_priv =
                 },
   .config      = &esp32s3_spi3_config,
   .refs        = 0,
-  .exclsem     = SEM_INITIALIZER(0),
+  .excllock     = NXMUTEX_INITIALIZER,
   .frequency   = 0,
   .actual      = 0,
   .mode        = 0,
@@ -496,11 +497,11 @@ static int esp32s3_spi_lock(struct spi_dev_s *dev, bool lock)
 
   if (lock)
     {
-      ret = nxsem_wait_uninterruptible(&priv->exclsem);
+      ret = nxmutex_lock(&priv->excllock);
     }
   else
     {
-      ret = nxsem_post(&priv->exclsem);
+      ret = nxmutex_unlock(&priv->excllock);
     }
 
   return ret;
@@ -1330,9 +1331,9 @@ static void esp32s3_spi_init(struct spi_dev_s *dev)
   const struct esp32s3_spi_config_s *config = priv->config;
   uint32_t regval;
 
-  /* Initialize the SPI semaphore that enforces mutually exclusive access */
+  /* Initialize the SPI mutex that enforces mutually exclusive access */
 
-  nxsem_init(&priv->exclsem, 0, 1);
+  nxmutex_init(&priv->excllock);
 
   esp32s3_gpiowrite(config->cs_pin, true);
   esp32s3_gpiowrite(config->mosi_pin, true);
@@ -1623,8 +1624,7 @@ int esp32s3_spibus_uninitialize(struct spi_dev_s *dev)
 #endif
 
   esp32s3_spi_deinit(dev);
-
-  nxsem_destroy(&priv->exclsem);
+  nxmutex_destroy(&priv->excllock);
 
   return OK;
 }

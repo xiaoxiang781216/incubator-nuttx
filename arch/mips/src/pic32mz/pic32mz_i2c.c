@@ -36,6 +36,7 @@
 #include <nuttx/arch.h>
 #include <nuttx/irq.h>
 #include <nuttx/clock.h>
+#include <nuttx/mutex.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/i2c/i2c_master.h>
 
@@ -185,7 +186,7 @@ struct pic32mz_i2c_priv_s
   const struct pic32mz_i2c_config_s *config;
 
   int refs;                       /* Reference count */
-  sem_t sem_excl;                 /* Mutual exclusion semaphore */
+  mutex_t lock_excl;              /* Mutual exclusion mutex */
 #ifndef CONFIG_I2C_POLLED
   sem_t sem_isr;                  /* Interrupt wait semaphore */
 #endif
@@ -235,10 +236,6 @@ static inline int
 pic32mz_i2c_sem_waitdone(struct pic32mz_i2c_priv_s *priv);
 static inline void
 pic32mz_i2c_sem_waitidle(struct pic32mz_i2c_priv_s *priv);
-static inline void pic32mz_i2c_sem_post(struct pic32mz_i2c_priv_s *priv);
-static inline void pic32mz_i2c_sem_init(struct pic32mz_i2c_priv_s *priv);
-static inline void
-pic32mz_i2c_sem_destroy(struct pic32mz_i2c_priv_s *priv);
 
 #ifdef CONFIG_I2C_TRACE
 static void pic32mz_i2c_tracereset(struct pic32mz_i2c_priv_s *priv);
@@ -807,58 +804,6 @@ pic32mz_i2c_sem_waitidle(struct pic32mz_i2c_priv_s *priv)
   /* If we get here then a timeout occurred with the bus still in idle */
 
   i2cinfo("Timeout with I2CxCON: %04x I2CxSTAT: %04x\n", con, stat);
-}
-
-/****************************************************************************
- * Name: pic32mz_i2c_sem_post
- *
- * Description:
- *   Release the mutual exclusion semaphore
- *
- ****************************************************************************/
-
-static inline void pic32mz_i2c_sem_post(struct pic32mz_i2c_priv_s *priv)
-{
-  nxsem_post(&priv->sem_excl);
-}
-
-/****************************************************************************
- * Name: pic32mz_i2c_sem_init
- *
- * Description:
- *   Initialize semaphores
- *
- ****************************************************************************/
-
-static inline void pic32mz_i2c_sem_init(struct pic32mz_i2c_priv_s *priv)
-{
-  nxsem_init(&priv->sem_excl, 0, 1);
-
-#ifndef CONFIG_I2C_POLLED
-  /* This semaphore is used for signaling and, hence, should not have
-   * priority inheritance enabled.
-   */
-
-  nxsem_init(&priv->sem_isr, 0, 0);
-  nxsem_set_protocol(&priv->sem_isr, SEM_PRIO_NONE);
-#endif
-}
-
-/****************************************************************************
- * Name: pic32mz_i2c_sem_destroy
- *
- * Description:
- *   Destroy semaphores.
- *
- ****************************************************************************/
-
-static inline void
-pic32mz_i2c_sem_destroy(struct pic32mz_i2c_priv_s *priv)
-{
-  nxsem_destroy(&priv->sem_excl);
-#ifndef CONFIG_I2C_POLLED
-  nxsem_destroy(&priv->sem_isr);
-#endif
 }
 
 /****************************************************************************
@@ -1566,9 +1511,9 @@ static int pic32mz_i2c_transfer(struct i2c_master_s *dev,
   uint32_t status = 0;
   int ret;
 
-  /* Acquire the semaphore. */
+  /* Acquire the mutex. */
 
-  ret = nxsem_wait(&priv->sem_excl);
+  ret = nxmutex_lock(&priv->lock_excl);
   if (ret < 0)
     {
       return ret;
@@ -1661,8 +1606,7 @@ static int pic32mz_i2c_transfer(struct i2c_master_s *dev,
   priv->dcnt = 0;
   priv->ptr = NULL;
 
-  pic32mz_i2c_sem_post(priv);
-
+  nxmutex_unlock(&priv->lock_excl);
   return ret;
 }
 
@@ -1697,7 +1641,7 @@ static int pic32mz_i2c_reset(struct i2c_master_s *dev)
 
   /* Lock out other clients */
 
-  ret = nxsem_wait_uninterruptible(&priv->sem_excl);
+  ret = nxmutex_lock(&priv->lock_excl);
   if (ret < 0)
     {
       return ret;
@@ -1792,7 +1736,7 @@ out:
 
   /* Release the port for re-use by other clients */
 
-  pic32mz_i2c_sem_post(priv);
+  nxmutex_unlock(&priv->lock_excl);
 }
 #endif /* CONFIG_I2C_RESET */
 
@@ -1858,7 +1802,16 @@ struct i2c_master_s *pic32mz_i2cbus_initialize(int port)
 
   if ((volatile int)priv->refs++ == 0)
     {
-      pic32mz_i2c_sem_init(priv);
+      nxmutex_init(&priv->lock_excl);
+
+#ifndef CONFIG_I2C_POLLED
+      /* This semaphore is used for signaling and, hence, should not have
+       * priority inheritance enabled.
+       */
+
+      nxsem_init(&priv->sem_isr, 0, 0);
+      nxsem_set_protocol(&priv->sem_isr, SEM_PRIO_NONE);
+#endif
       pic32mz_i2c_init(priv);
     }
 
@@ -1904,7 +1857,10 @@ int pic32mz_i2cbus_uninitialize(struct i2c_master_s *dev)
 
   /* Release unused resources */
 
-  pic32mz_i2c_sem_destroy(priv);
+  nxmutex_destroy(&priv->lock_excl);
+#ifndef CONFIG_I2C_POLLED
+  nxsem_destroy(&priv->sem_isr);
+#endif
   return OK;
 }
 

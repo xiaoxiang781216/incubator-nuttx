@@ -37,6 +37,7 @@
 #include <nuttx/arch.h>
 #include <nuttx/irq.h>
 #include <nuttx/clock.h>
+#include <nuttx/mutex.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/i2c/i2c_master.h>
 
@@ -184,7 +185,7 @@ struct s32k1xx_lpi2c_priv_s
   const struct s32k1xx_lpi2c_config_s *config;
 
   int refs;                    /* Reference count */
-  sem_t sem_excl;              /* Mutual exclusion semaphore */
+  mutex_t lock_excl;           /* Mutual exclusion mutex */
 #ifndef CONFIG_I2C_POLLED
   sem_t sem_isr;               /* Interrupt wait semaphore */
 #endif
@@ -230,8 +231,6 @@ static inline void
 s32k1xx_lpi2c_modifyreg(struct s32k1xx_lpi2c_priv_s *priv,
                         uint16_t offset, uint32_t clearbits,
                         uint32_t setbits);
-static inline int
-s32k1xx_lpi2c_sem_wait(struct s32k1xx_lpi2c_priv_s *priv);
 
 #ifdef CONFIG_S32K1XX_I2C_DYNTIMEO
 static uint32_t
@@ -242,12 +241,6 @@ static inline int
 s32k1xx_lpi2c_sem_waitdone(struct s32k1xx_lpi2c_priv_s *priv);
 static inline void
 s32k1xx_lpi2c_sem_waitstop(struct s32k1xx_lpi2c_priv_s *priv);
-static inline void
-s32k1xx_lpi2c_sem_post(struct s32k1xx_lpi2c_priv_s *priv);
-static inline void
-s32k1xx_lpi2c_sem_init(struct s32k1xx_lpi2c_priv_s *priv);
-static inline void
-s32k1xx_lpi2c_sem_destroy(struct s32k1xx_lpi2c_priv_s *priv);
 
 #ifdef CONFIG_I2C_TRACE
 static void s32k1xx_lpi2c_tracereset(struct s32k1xx_lpi2c_priv_s *priv);
@@ -439,21 +432,6 @@ s32k1xx_lpi2c_modifyreg(struct s32k1xx_lpi2c_priv_s *priv,
                         uint32_t setbits)
 {
   modifyreg32(priv->config->base + offset, clearbits, setbits);
-}
-
-/****************************************************************************
- * Name: s32k1xx_lpi2c_sem_wait
- *
- * Description:
- *   Take the exclusive access, waiting as necessary.  May be interrupted by
- *   a signal.
- *
- ****************************************************************************/
-
-static inline int
-s32k1xx_lpi2c_sem_wait(struct s32k1xx_lpi2c_priv_s *priv)
-{
-  return nxsem_wait(&priv->sem_excl);
 }
 
 /****************************************************************************
@@ -733,59 +711,6 @@ s32k1xx_lpi2c_sem_waitstop(struct s32k1xx_lpi2c_priv_s *priv)
    */
 
   i2cinfo("Timeout with Status Register: %" PRIx32 "\n", regval);
-}
-
-/****************************************************************************
- * Name: s32k1xx_lpi2c_sem_post
- *
- * Description:
- *   Release the mutual exclusion semaphore
- *
- ****************************************************************************/
-
-static inline void s32k1xx_lpi2c_sem_post(struct s32k1xx_lpi2c_priv_s *priv)
-{
-  nxsem_post(&priv->sem_excl);
-}
-
-/****************************************************************************
- * Name: s32k1xx_lpi2c_sem_init
- *
- * Description:
- *   Initialize semaphores
- *
- ****************************************************************************/
-
-static inline void
-s32k1xx_lpi2c_sem_init(struct s32k1xx_lpi2c_priv_s *priv)
-{
-  nxsem_init(&priv->sem_excl, 0, 1);
-
-#ifndef CONFIG_I2C_POLLED
-  /* This semaphore is used for signaling and, hence, should not have
-   * priority inheritance enabled.
-   */
-
-  nxsem_init(&priv->sem_isr, 0, 0);
-  nxsem_set_protocol(&priv->sem_isr, SEM_PRIO_NONE);
-#endif
-}
-
-/****************************************************************************
- * Name: s32k1xx_lpi2c_sem_destroy
- *
- * Description:
- *   Destroy semaphores.
- *
- ****************************************************************************/
-
-static inline void
-s32k1xx_lpi2c_sem_destroy(struct s32k1xx_lpi2c_priv_s *priv)
-{
-  nxsem_destroy(&priv->sem_excl);
-#ifndef CONFIG_I2C_POLLED
-  nxsem_destroy(&priv->sem_isr);
-#endif
 }
 
 /****************************************************************************
@@ -1959,7 +1884,7 @@ static int s32k1xx_lpi2c_transfer(struct i2c_master_s *dev,
 
   /* Ensure that address or flags don't change meanwhile */
 
-  ret = s32k1xx_lpi2c_sem_wait(priv);
+  ret = nxmutex_lock(&priv->lock_excl);
   if (ret < 0)
     {
       return ret;
@@ -2064,7 +1989,7 @@ static int s32k1xx_lpi2c_transfer(struct i2c_master_s *dev,
   priv->dcnt = 0;
   priv->ptr = NULL;
 
-  s32k1xx_lpi2c_sem_post(priv);
+  nxmutex_unlock(&priv->lock_excl);
   return ret;
 }
 
@@ -2101,7 +2026,7 @@ static int s32k1xx_lpi2c_reset(struct i2c_master_s *dev)
 
   /* Lock out other clients */
 
-  ret = s32k1xx_lpi2c_sem_wait(priv);
+  ret = nxmutex_lock(&priv->lock_excl);
   if (ret < 0)
     {
       return ret;
@@ -2204,7 +2129,7 @@ out:
 
   /* Release the port for re-use by other clients */
 
-  s32k1xx_lpi2c_sem_post(priv);
+  nxmutex_unlock(&priv->lock_excl);
   return ret;
 }
 #endif /* CONFIG_I2C_RESET */
@@ -2254,7 +2179,16 @@ struct i2c_master_s *s32k1xx_i2cbus_initialize(int port)
 
   if ((volatile int)priv->refs++ == 0)
     {
-      s32k1xx_lpi2c_sem_init(priv);
+      nxmutex_init(&priv->lock_excl);
+
+#ifndef CONFIG_I2C_POLLED
+      /* This semaphore is used for signaling and, hence, should not have
+      * priority inheritance enabled.
+      */
+
+      nxsem_init(&priv->sem_isr, 0, 0);
+      nxsem_set_protocol(&priv->sem_isr, SEM_PRIO_NONE);
+#endif
       s32k1xx_lpi2c_init(priv);
 
 #ifdef CONFIG_S32K1XX_LPI2C_DMA
@@ -2333,7 +2267,10 @@ int s32k1xx_i2cbus_uninitialize(struct i2c_master_s *dev)
 
   /* Release unused resources */
 
-  s32k1xx_lpi2c_sem_destroy(priv);
+  nxmutex_destroy(&priv->lock_excl);
+#ifndef CONFIG_I2C_POLLED
+  nxsem_destroy(&priv->sem_isr);
+#endif
   return OK;
 }
 

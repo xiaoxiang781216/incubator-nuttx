@@ -34,6 +34,7 @@
 #include <nuttx/kmalloc.h>
 #include <nuttx/kthread.h>
 #include <nuttx/signal.h>
+#include <nuttx/mutex.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/fs/fs.h>
 #include <nuttx/net/net.h>
@@ -120,7 +121,7 @@ enum telnet_state_e
 
 struct telnet_dev_s
 {
-  sem_t             td_exclsem;   /* Enforces mutually exclusive access */
+  mutex_t           td_excllock;  /* Enforces mutually exclusive access */
   sem_t             td_iosem;     /* I/O thread will notify that data is available */
   uint8_t           td_state;     /* (See telnet_state_e) */
   uint8_t           td_crefs;     /* The number of open references to the session */
@@ -229,8 +230,9 @@ static const struct file_operations g_factory_fops =
 
 static pid_t                g_telnet_io_kthread = INVALID_PROCESS_ID;
 static struct telnet_dev_s *g_telnet_clients[CONFIG_TELNET_MAXLCLIENTS];
-static sem_t                g_iosem       = SEM_INITIALIZER(0);
-static sem_t                g_clients_sem = SEM_INITIALIZER(1);
+static sem_t                g_iosem        = NXSEM_INITIALIZER(0,
+                                               PRIOINHERIT_FLAGS_DISABLE);
+static mutex_t              g_clients_lock = NXMUTEX_INITIALIZER;
 
 /****************************************************************************
  * Private Functions
@@ -644,7 +646,7 @@ static int telnet_open(FAR struct file *filep)
 
   /* Get exclusive access to the device structures */
 
-  ret = nxsem_wait(&priv->td_exclsem);
+  ret = nxmutex_lock(&priv->td_excllock);
   if (ret < 0)
     {
       nerr("ERROR: nxsem_wait failed: %d\n", ret);
@@ -662,7 +664,7 @@ static int telnet_open(FAR struct file *filep)
       /* More than 255 opens; uint8_t would overflow to zero */
 
       ret = -EMFILE;
-      goto errout_with_sem;
+      goto errout_with_lock;
     }
 
   /* Save the new open count on success */
@@ -670,8 +672,8 @@ static int telnet_open(FAR struct file *filep)
   priv->td_crefs = tmp;
   ret = OK;
 
-errout_with_sem:
-  nxsem_post(&priv->td_exclsem);
+errout_with_lock:
+  nxmutex_unlock(&priv->td_excllock);
 
 errout:
   return ret;
@@ -693,7 +695,7 @@ static int telnet_close(FAR struct file *filep)
 
   /* Get exclusive access to the device structures */
 
-  ret = nxsem_wait(&priv->td_exclsem);
+  ret = nxmutex_lock(&priv->td_excllock);
   if (ret < 0)
     {
       nerr("ERROR: nxsem_wait failed: %d\n", ret);
@@ -709,7 +711,7 @@ static int telnet_close(FAR struct file *filep)
       /* Just decrement the reference count and release the semaphore */
 
       priv->td_crefs--;
-      nxsem_post(&priv->td_exclsem);
+      nxmutex_unlock(&priv->td_excllock);
     }
   else
     {
@@ -750,7 +752,7 @@ static int telnet_close(FAR struct file *filep)
 
       /* Remove ourself from the clients list */
 
-      nxsem_wait(&g_clients_sem);
+      nxmutex_lock(&g_clients_lock);
       for (i = 0; i < CONFIG_TELNET_MAXLCLIENTS; i++)
         {
           if (g_telnet_clients[i] == priv)
@@ -770,7 +772,7 @@ static int telnet_close(FAR struct file *filep)
           priv->td_fds.events = 0;
         }
 
-      nxsem_post(&g_clients_sem);
+      nxmutex_unlock(&g_clients_lock);
 
       /* Notify the I/O thread that a client was removed */
 
@@ -781,15 +783,15 @@ static int telnet_close(FAR struct file *filep)
       psock_close(&priv->td_psock);
 
       /* Release the driver memory.  What if there are threads waiting on
-       * td_exclsem?  They will never be awakened!  How could this happen?
+       * td_excllock?  They will never be awakened!  How could this happen?
        * crefs == 1 so there are no other open references to the driver.
        * But this could have if someone were trying to re-open the driver
        * after every other thread has closed it.  That really should not
        * happen in the intended usage model.
        */
 
-      DEBUGASSERT(priv->td_exclsem.semcount == 0);
-      nxsem_destroy(&priv->td_exclsem);
+      DEBUGASSERT(nxmutex_is_locked(&priv->td_excllock));
+      nxmutex_destroy(&priv->td_excllock);
       kmm_free(priv);
     }
 
@@ -850,7 +852,7 @@ static ssize_t telnet_read(FAR struct file *filep, FAR char *buffer,
 
       /* Take exclusive access to data buffer */
 
-      ret = nxsem_wait(&priv->td_exclsem);
+      ret = nxmutex_lock(&priv->td_excllock);
       if (ret < 0)
         {
           nerr("ERROR: nxsem_wait failed: %d\n", ret);
@@ -862,7 +864,7 @@ static ssize_t telnet_read(FAR struct file *filep, FAR char *buffer,
       src = &priv->td_rxbuffer[priv->td_offset];
       nread = telnet_receive(priv, src, priv->td_pending, buffer, len);
 
-      nxsem_post(&priv->td_exclsem);
+      nxmutex_unlock(&priv->td_excllock);
     }
   while (nread == 0);
 
@@ -991,7 +993,7 @@ static int telnet_session(FAR struct telnet_session_s *session)
 
   /* Initialize the allocated driver instance */
 
-  nxsem_init(&priv->td_exclsem, 0, 1);
+  nxmutex_init(&priv->td_excllock);
   nxsem_init(&priv->td_iosem, 0, 0);
 
   /* td_iosem is used for signaling and, hence, must not participate in
@@ -1039,7 +1041,7 @@ static int telnet_session(FAR struct telnet_session_s *session)
    * Get exclusive access to the minor counter.
    */
 
-  ret = nxsem_wait_uninterruptible(&g_clients_sem);
+  ret = nxmutex_lock(&g_clients_lock);
   if (ret < 0)
     {
       nerr("ERROR: nxsem_wait failed: %d\n", ret);
@@ -1064,7 +1066,7 @@ static int telnet_session(FAR struct telnet_session_s *session)
     {
       nerr("ERROR: Too many sessions\n");
       ret = -ENFILE;
-      goto errout_with_semaphore;
+      goto errout_with_lock;
     }
 
   /* Register the driver */
@@ -1074,7 +1076,7 @@ static int telnet_session(FAR struct telnet_session_s *session)
     {
       nerr("ERROR: Failed to register the driver %s: %d\n",
            session->ts_devpath, ret);
-      goto errout_with_semaphore;
+      goto errout_with_lock;
     }
 
   /* Close the original psock (keeping the clone) */
@@ -1114,13 +1116,13 @@ static int telnet_session(FAR struct telnet_session_s *session)
   /* Save ourself in the list of Telnet client threads */
 
   g_telnet_clients[priv->td_minor] = priv;
-  nxsem_post(&g_clients_sem);
+  nxmutex_unlock(&g_clients_lock);
   nxsem_post(&g_iosem);
 
   return OK;
 
-errout_with_semaphore:
-  nxsem_post(&g_clients_sem);
+errout_with_lock:
+  nxmutex_unlock(&g_clients_lock);
 
 errout_with_clone:
   psock_close(&priv->td_psock);
@@ -1272,7 +1274,7 @@ static int telnet_io_main(int argc, FAR char** argv)
 
       /* Poll each client in the g_telnet_clients[] array. */
 
-      nxsem_wait(&g_clients_sem);
+      nxmutex_lock(&g_clients_lock);
       for (i = 0; i < CONFIG_TELNET_MAXLCLIENTS; i++)
         {
           priv = g_telnet_clients[i];
@@ -1289,7 +1291,7 @@ static int telnet_io_main(int argc, FAR char** argv)
             }
         }
 
-      nxsem_post(&g_clients_sem);
+      nxmutex_unlock(&g_clients_lock);
 
       /* Wait for any Telnet connect/disconnect events
        * to include/remove client sockets from polling
@@ -1299,7 +1301,7 @@ static int telnet_io_main(int argc, FAR char** argv)
 
       /* Revisit each client in the g_telnet_clients[] array */
 
-      nxsem_wait(&g_clients_sem);
+      nxmutex_lock(&g_clients_lock);
       for (i = 0; i < CONFIG_TELNET_MAXLCLIENTS; i++)
         {
           priv = g_telnet_clients[i];
@@ -1316,7 +1318,7 @@ static int telnet_io_main(int argc, FAR char** argv)
                     {
                       /* Take exclusive access to data buffer */
 
-                      nxsem_wait(&priv->td_exclsem);
+                      nxmutex_lock(&priv->td_excllock);
                       buffer = priv->td_rxbuffer + priv->td_pending +
                                priv->td_offset;
 
@@ -1326,7 +1328,7 @@ static int telnet_io_main(int argc, FAR char** argv)
                                        0);
 
                       priv->td_pending += ret;
-                      nxsem_post(&priv->td_exclsem);
+                      nxmutex_unlock(&priv->td_excllock);
 
                       /* Notify the client thread that data is available */
 
@@ -1360,7 +1362,7 @@ static int telnet_io_main(int argc, FAR char** argv)
             }
         }
 
-      nxsem_post(&g_clients_sem);
+      nxmutex_unlock(&g_clients_lock);
     }
 
   return 0;

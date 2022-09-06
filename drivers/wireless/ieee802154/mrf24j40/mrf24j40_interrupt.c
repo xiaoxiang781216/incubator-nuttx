@@ -134,9 +134,9 @@ static void mrf24j40_irqwork_txnorm(FAR struct mrf24j40_radio_s *dev)
 
       /* Must unlock the radio before calling poll */
 
-      nxsem_post(&dev->exclsem);
+      nxmutex_unlock(&dev->excllock);
       mrf24j40_dopoll_csma(dev);
-      while (nxsem_wait(&dev->exclsem) < 0)
+      while (nxmutex_lock(&dev->excllock) < 0)
         {
         }
     }
@@ -314,7 +314,7 @@ void mrf24j40_irqworker(FAR void *arg)
 
   /* Get exclusive access to the driver */
 
-  while (nxsem_wait(&dev->exclsem) < 0)
+  while (nxmutex_lock(&dev->excllock) < 0)
     {
     }
 
@@ -400,7 +400,7 @@ void mrf24j40_irqworker(FAR void *arg)
 
   /* Unlock the radio device */
 
-  nxsem_post(&dev->exclsem);
+  nxmutex_unlock(&dev->excllock);
 
   /* Re-enable GPIO interrupts */
 

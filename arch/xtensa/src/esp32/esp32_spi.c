@@ -38,6 +38,7 @@
 #include <nuttx/arch.h>
 #include <nuttx/irq.h>
 #include <nuttx/clock.h>
+#include <nuttx/mutex.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/spinlock.h>
 #include <nuttx/spi/spi.h>
@@ -146,7 +147,7 @@ struct esp32_spi_priv_s
 
   /* Held while chip is selected for mutual exclusion */
 
-  sem_t            exclsem;
+  mutex_t          excllock;
 
   /* Interrupt wait semaphore */
 
@@ -477,11 +478,11 @@ static int esp32_spi_lock(struct spi_dev_s *dev, bool lock)
 
   if (lock)
     {
-      ret = nxsem_wait_uninterruptible(&priv->exclsem);
+      ret = nxmutex_lock(&priv->excllock);
     }
   else
     {
-      ret = nxsem_post(&priv->exclsem);
+      ret = nxmutex_unlock(&priv->excllock);
     }
 
   return ret;
@@ -1267,9 +1268,9 @@ static void esp32_spi_init(struct spi_dev_s *dev)
   const struct esp32_spi_config_s *config = priv->config;
   uint32_t regval;
 
-  /* Initialize the SPI semaphore that enforces mutually exclusive access */
+  /* Initialize the SPI mutex that enforces mutually exclusive access */
 
-  nxsem_init(&priv->exclsem, 0, 1);
+  nxmutex_init(&priv->excllock);
 
   esp32_gpiowrite(config->cs_pin, 1);
   esp32_gpiowrite(config->mosi_pin, 1);
@@ -1531,8 +1532,7 @@ int esp32_spibus_uninitialize(struct spi_dev_s *dev)
     }
 
   esp32_spi_deinit(dev);
-
-  nxsem_destroy(&priv->exclsem);
+  nxmutex_destroy(&priv->excllock);
 
   return OK;
 }

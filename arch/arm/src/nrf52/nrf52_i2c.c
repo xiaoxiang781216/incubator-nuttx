@@ -30,7 +30,7 @@
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
-#include <nuttx/semaphore.h>
+#include <nuttx/mutex.h>
 #include <nuttx/kmalloc.h>
 #include <arch/board/board.h>
 
@@ -73,11 +73,11 @@ struct nrf52_i2c_priv_s
 
   uint8_t                 copy_buf[CONFIG_NRF52_I2C_MASTER_COPY_BUF_SIZE];
 #endif
-  uint32_t                freq;     /* Current I2C frequency */
-  int                     dcnt;     /* Current message length */
-  uint16_t                flags;    /* Current message flags */
-  uint16_t                addr;     /* Current I2C address */
-  sem_t                   sem_excl; /* Mutual exclusion semaphore */
+  uint32_t                freq;      /* Current I2C frequency */
+  int                     dcnt;      /* Current message length */
+  uint16_t                flags;     /* Current message flags */
+  uint16_t                addr;      /* Current I2C address */
+  mutex_t                 lock_excl; /* Mutual exclusion mutex */
 #ifndef CONFIG_I2C_POLLED
   sem_t sem_isr;                    /* Interrupt wait semaphore */
 #endif
@@ -217,7 +217,7 @@ static int nrf52_i2c_transfer(struct i2c_master_s *dev,
   uint8_t *pack_buf = NULL;
 #endif
 
-  ret = nxsem_wait(&priv->sem_excl);
+  ret = nxmutex_lock(&priv->lock_excl);
   if (ret < 0)
     {
       return ret;
@@ -516,7 +516,7 @@ errout:
     }
 #endif
 
-  nxsem_post(&priv->sem_excl);
+  nxmutex_unlock(&priv->lock_excl);
   return ret;
 }
 
@@ -695,52 +695,6 @@ static int nrf52_i2c_init(struct nrf52_i2c_priv_s *priv)
 }
 
 /****************************************************************************
- * Name: nrf52_i2c_sem_init
- *
- * Description:
- *   Initialize semaphores
- *
- ****************************************************************************/
-
-static int nrf52_i2c_sem_init(struct nrf52_i2c_priv_s *priv)
-{
-  /* Initialize semaphores */
-
-  nxsem_init(&priv->sem_excl, 0, 1);
-
-#ifndef CONFIG_I2C_POLLED
-  /* This semaphore is used for signaling and, hence, should not have
-   * priority inheritance enabled.
-   */
-
-  nxsem_init(&priv->sem_isr, 0, 0);
-  nxsem_set_protocol(&priv->sem_isr, SEM_PRIO_NONE);
-#endif
-
-  return OK;
-}
-
-/****************************************************************************
- * Name: nrf52_i2c_sem_destroy
- *
- * Description:
- *   Destroy semaphores.
- *
- ****************************************************************************/
-
-static int nrf52_i2c_sem_destroy(struct nrf52_i2c_priv_s *priv)
-{
-  /* Release unused resources */
-
-  nxsem_destroy(&priv->sem_excl);
-#ifndef CONFIG_I2C_POLLED
-  nxsem_destroy(&priv->sem_isr);
-#endif
-
-  return OK;
-}
-
-/****************************************************************************
  * Name: nrf52_i2c_deinit
  *
  * Description:
@@ -827,10 +781,18 @@ struct i2c_master_s *nrf52_i2cbus_initialize(int port)
 
   if (priv->refs++ == 0)
     {
-      /* Initialize sempaphores */
+      /* Initialize mutex & semaphores */
 
-      nrf52_i2c_sem_init(priv);
+      nxmutex_init(&priv->lock_excl);
 
+#ifndef CONFIG_I2C_POLLED
+      /* This semaphore is used for signaling and, hence, should not have
+       * priority inheritance enabled.
+       */
+
+      nxsem_init(&priv->sem_isr, 0, 0);
+      nxsem_set_protocol(&priv->sem_isr, SEM_PRIO_NONE);
+#endif
       /* Initialize I2C */
 
       nrf52_i2c_init(priv);
@@ -877,9 +839,12 @@ int nrf52_i2cbus_uninitialize(struct i2c_master_s *dev)
 
   nrf52_i2c_deinit(priv);
 
-  /* Release semaphores */
+  /* Release mutex & semaphore */
 
-  nrf52_i2c_sem_destroy(priv);
+  nxmutex_destroy(&priv->lock_excl);
+#ifndef CONFIG_I2C_POLLED
+  nxsem_destroy(&priv->sem_isr);
+#endif
 
   return OK;
 }

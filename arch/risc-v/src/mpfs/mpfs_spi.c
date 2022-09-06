@@ -35,7 +35,7 @@
 
 #include <nuttx/arch.h>
 #include <nuttx/irq.h>
-#include <nuttx/semaphore.h>
+#include <nuttx/mutex.h>
 #include <nuttx/spi/spi.h>
 
 #include <arch/board/board.h>
@@ -119,7 +119,7 @@ struct mpfs_spi_priv_s
   const int                      id;        /* SPI0 or SPI1 id */
   uint32_t                       devid;     /* SPI CS device 0..7 */
 
-  sem_t                          sem_excl;  /* Bus usage semaphore */
+  mutex_t                        lock_excl; /* Bus usage mutex */
   sem_t                          sem_isr;   /* Interrupt wait semaphore */
 
   uint32_t                       frequency; /* Requested clock frequency */
@@ -361,11 +361,11 @@ static int mpfs_spi_lock(struct spi_dev_s *dev, bool lock)
 
   if (lock)
     {
-      ret = nxsem_wait_uninterruptible(&priv->sem_excl);
+      ret = nxmutex_lock(&priv->lock_excl);
     }
   else
     {
-      ret = nxsem_post(&priv->sem_excl);
+      ret = nxmutex_unlock(&priv->lock_excl);
     }
 
   return ret;
@@ -1383,9 +1383,9 @@ static void mpfs_spi_init(struct spi_dev_s *dev)
   struct mpfs_spi_priv_s *priv = (struct mpfs_spi_priv_s *)dev;
   const struct mpfs_spi_config_s *config = priv->config;
 
-  /* Initialize the SPI semaphore for mutually exclusive access */
+  /* Initialize the SPI mutex & semaphore for mutually exclusive access */
 
-  nxsem_init(&priv->sem_excl, 0, 1);
+  nxmutex_init(&priv->lock_excl);
 
   nxsem_init(&priv->sem_isr, 0, 0);
   nxsem_set_protocol(&priv->sem_isr, SEM_PRIO_NONE);
@@ -1569,7 +1569,7 @@ int mpfs_spibus_uninitialize(struct spi_dev_s *dev)
 
   mpfs_spi_deinit(dev);
 
-  nxsem_destroy(&priv->sem_excl);
+  nxmutex_destroy(&priv->lock_excl);
   nxsem_destroy(&priv->sem_isr);
 
   return OK;

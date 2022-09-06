@@ -35,7 +35,7 @@
 
 #include <nuttx/arch.h>
 #include <nuttx/init.h>
-#include <nuttx/semaphore.h>
+#include <nuttx/mutex.h>
 #include <nuttx/mtd/mtd.h>
 
 #include "esp32c3_attr.h"
@@ -141,7 +141,7 @@ static const struct esp32c3_mtd_dev_s g_esp32c3_spiflash_encrypt =
 
 /* Ensure exclusive access to the driver */
 
-static sem_t g_exclsem = SEM_INITIALIZER(1);
+static mutex_t g_excllock = NXMUTEX_INITIALIZER;
 
 /****************************************************************************
  * Private Functions
@@ -182,15 +182,14 @@ static int esp32c3_erase(struct mtd_dev_s *dev, off_t startblock,
   finfo("spi_flash_erase_range(0x%x, %d)\n", offset, nbytes);
 #endif
 
-  ret = nxsem_wait(&g_exclsem);
+  ret = nxmutex_lock(&g_excllock);
   if (ret < 0)
     {
       return ret;
     }
 
   ret = spi_flash_erase_range(offset, nbytes);
-
-  nxsem_post(&g_exclsem);
+  nxmutex_unlock(&g_excllock);
 
   if (ret == OK)
     {
@@ -239,17 +238,16 @@ static ssize_t esp32c3_read(struct mtd_dev_s *dev, off_t offset,
   finfo("spi_flash_read(0x%x, %p, %d)\n", offset, buffer, nbytes);
 #endif
 
-  /* Acquire the semaphore. */
+  /* Acquire the mutex. */
 
-  ret = nxsem_wait(&g_exclsem);
+  ret = nxmutex_lock(&g_excllock);
   if (ret < 0)
     {
       goto error_with_buffer;
     }
 
   ret = spi_flash_read(offset, buffer, nbytes);
-
-  nxsem_post(&g_exclsem);
+  nxmutex_unlock(&g_excllock);
 
   if (ret == OK)
     {
@@ -296,15 +294,14 @@ static ssize_t esp32c3_bread(struct mtd_dev_s *dev, off_t startblock,
   finfo("spi_flash_read(0x%x, %p, %d)\n", addr, buffer, size);
 #endif
 
-  ret = nxsem_wait(&g_exclsem);
+  ret = nxmutex_lock(&g_excllock);
   if (ret < 0)
     {
       return ret;
     }
 
   ret = spi_flash_read(addr, buffer, size);
-
-  nxsem_post(&g_exclsem);
+  nxmutex_unlock(&g_excllock);
 
   if (ret == OK)
     {
@@ -350,17 +347,16 @@ static ssize_t esp32c3_read_decrypt(struct mtd_dev_s *dev,
         nbytes);
 #endif
 
-  /* Acquire the semaphore. */
+  /* Acquire the mutex. */
 
-  ret = nxsem_wait(&g_exclsem);
+  ret = nxmutex_lock(&g_excllock);
   if (ret < 0)
     {
       return ret;
     }
 
   ret = spi_flash_read_encrypted(offset, buffer, nbytes);
-
-  nxsem_post(&g_exclsem);
+  nxmutex_unlock(&g_excllock);
 
   if (ret == OK)
     {
@@ -407,15 +403,14 @@ static ssize_t esp32c3_bread_decrypt(struct mtd_dev_s *dev,
   finfo("spi_flash_read_encrypted(0x%x, %p, %d)\n", addr, buffer, size);
 #endif
 
-  ret = nxsem_wait(&g_exclsem);
+  ret = nxmutex_lock(&g_excllock);
   if (ret < 0)
     {
       return ret;
     }
 
   ret = spi_flash_read_encrypted(addr, buffer, size);
-
-  nxsem_post(&g_exclsem);
+  nxmutex_unlock(&g_excllock);
 
   if (ret == OK)
     {
@@ -465,17 +460,16 @@ static ssize_t esp32c3_write(struct mtd_dev_s *dev, off_t offset,
   finfo("spi_flash_write(0x%x, %p, %d)\n", offset, buffer, nbytes);
 #endif
 
-  /* Acquire the semaphore. */
+  /* Acquire the mutex. */
 
-  ret = nxsem_wait(&g_exclsem);
+  ret = nxmutex_lock(&g_excllock);
   if (ret < 0)
     {
       goto error_with_buffer;
     }
 
   ret = spi_flash_write(offset, buffer, nbytes);
-
-  nxsem_post(&g_exclsem);
+  nxmutex_unlock(&g_excllock);
 
   if (ret == OK)
     {
@@ -523,15 +517,14 @@ static ssize_t esp32c3_bwrite(struct mtd_dev_s *dev, off_t startblock,
   finfo("spi_flash_write(0x%x, %p, %d)\n", addr, buffer, size);
 #endif
 
-  ret = nxsem_wait(&g_exclsem);
+  ret = nxmutex_lock(&g_excllock);
   if (ret < 0)
     {
       return ret;
     }
 
   ret = spi_flash_write(addr, buffer, size);
-
-  nxsem_post(&g_exclsem);
+  nxmutex_unlock(&g_excllock);
 
   if (ret == OK)
     {
@@ -579,15 +572,14 @@ static ssize_t esp32c3_bwrite_encrypt(struct mtd_dev_s *dev,
   finfo("spi_flash_write_encrypted(0x%x, %p, %d)\n", addr, buffer, size);
 #endif
 
-  ret = nxsem_wait(&g_exclsem);
+  ret = nxmutex_lock(&g_excllock);
   if (ret < 0)
     {
       goto error_with_buffer;
     }
 
   ret = spi_flash_write_encrypted(addr, buffer, size);
-
-  nxsem_post(&g_exclsem);
+  nxmutex_unlock(&g_excllock);
 
   if (ret == OK)
     {

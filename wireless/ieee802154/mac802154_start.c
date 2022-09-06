@@ -58,7 +58,7 @@ int mac802154_req_start(MACHANDLE mac,
 
   /* Get exclusive access to the MAC */
 
-  ret = mac802154_lock(priv, true);
+  ret = nxmutex_lock(&priv->excllock);
   if (ret < 0)
     {
       return ret;
@@ -185,11 +185,10 @@ int mac802154_req_start(MACHANDLE mac,
         }
     }
 
-  mac802154_unlock(priv)
-
+  nxmutex_unlock(&priv->excllock);
   return OK;
 
 errout:
-  mac802154_unlock(priv)
+  nxmutex_unlock(&priv->excllock);
   return ret;
 }

@@ -193,12 +193,12 @@ static int rpmsgdev_open(FAR struct file *filep)
   dev = filep->f_inode->i_private;
   DEBUGASSERT(dev != NULL);
 
-  /* Take the semaphore */
+  /* Take the mutex */
 
   ret = nxmutex_lock(&dev->excl);
   if (ret < 0)
     {
-      rpmsgdeverr("semtake error, ret=%d\n", ret);
+      rpmsgdeverr("nxmutex_lock error, ret=%d\n", ret);
       return ret;
     }
 
@@ -252,7 +252,7 @@ static int rpmsgdev_close(FAR struct file *filep)
   dev = filep->f_inode->i_private;
   DEBUGASSERT(dev != NULL);
 
-  /* Take the semaphore */
+  /* Take the mutex */
 
   ret = nxmutex_lock(&dev->excl);
   if (ret < 0)
@@ -315,7 +315,7 @@ static ssize_t rpmsgdev_read(FAR struct file *filep, FAR char *buffer,
   dev = filep->f_inode->i_private;
   DEBUGASSERT(dev != NULL);
 
-  /* Take the semaphore */
+  /* Take the mutex */
 
   ret = nxmutex_lock(&dev->excl);
   if (ret < 0)
@@ -379,7 +379,7 @@ static ssize_t rpmsgdev_write(FAR struct file *filep, const char *buffer,
   dev = filep->f_inode->i_private;
   DEBUGASSERT(dev != NULL);
 
-  /* Take the semaphore */
+  /* Take the mutex */
 
   ret = nxmutex_lock(&dev->excl);
   if (ret < 0)
@@ -478,7 +478,7 @@ static off_t rpmsgdev_seek(FAR struct file *filep, off_t offset, int whence)
   dev = filep->f_inode->i_private;
   DEBUGASSERT(dev != NULL);
 
-  /* Take the semaphore */
+  /* Take the mutex */
 
   ret = nxmutex_lock(&dev->excl);
   if (ret < 0)
@@ -563,7 +563,7 @@ static int rpmsgdev_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
   dev = filep->f_inode->i_private;
   DEBUGASSERT(dev != NULL);
 
-  /* Take the semaphore */
+  /* Take the mutex */
 
   ret = nxmutex_lock(&dev->excl);
   if (ret < 0)

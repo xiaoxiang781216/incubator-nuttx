@@ -21,7 +21,7 @@
 #  - Xcode (cc, etc)
 #  - homebrew
 #  - autoconf
-#  - wget
+#  - curl
 
 set -e
 set -o xtrace
@@ -131,7 +131,7 @@ function gperf {
 
   if [ ! -f "${prebuilt}/gperf/bin/gperf" ]; then
     cd "${prebuilt}"
-    wget --quiet http://ftp.gnu.org/pub/gnu/gperf/gperf-3.1.tar.gz
+    curl -O -L -s http://ftp.gnu.org/pub/gnu/gperf/gperf-3.1.tar.gz
     tar zxf gperf-3.1.tar.gz
     cd "${prebuilt}"/gperf-3.1
     ./configure --prefix="${prebuilt}"/gperf; make; make install
@@ -175,8 +175,7 @@ function arm-clang-toolchain {
   if [ ! -f "${prebuilt}/clang-arm-none-eabi/bin/clang" ]; then
     cd "${prebuilt}"
     curl -O -L -s https://github.com/ARM-software/LLVM-embedded-toolchain-for-Arm/releases/download/release-14.0.0/LLVMEmbeddedToolchainForArm-14.0.0-linux.tar.gz
-    tar zxf LLVMEmbeddedToolchainForArm-14.0.0-linux.tar.gz
-    mv LLVMEmbeddedToolchainForArm-14.0.0 clang-arm-none-eabi
+    tar zxf LLVMEmbeddedToolchainForArm-14.0.0-linux.tar.gz clang-arm-none-eabi
     cp /usr/bin/clang-extdef-mapping-10 clang-arm-none-eabi/bin/clang-extdef-mapping
     rm LLVMEmbeddedToolchainForArm-14.0.0-linux.tar.gz
   fi
@@ -197,12 +196,10 @@ function arm-gcc-toolchain {
         ;;
     esac
     cd "${prebuilt}"
-    wget --quiet https://developer.arm.com/-/media/Files/downloads/gnu/11.3.rel1/binrel/arm-gnu-toolchain-11.3.rel1${flavor}-x86_64-arm-none-eabi.tar.xz
-    xz -d arm-gnu-toolchain-11.3.rel1${flavor}-x86_64-arm-none-eabi.tar.xz
-    tar xf arm-gnu-toolchain-11.3.rel1${flavor}-x86_64-arm-none-eabi.tar
-    mv arm-gnu-toolchain-11.3.rel1${flavor}-x86_64-arm-none-eabi gcc-arm-none-eabi
+    curl -O -L -s https://developer.arm.com/-/media/Files/downloads/gnu/11.3.rel1/binrel/arm-gnu-toolchain-11.3.rel1${flavor}-x86_64-arm-none-eabi.tar.xz
+    tar xf arm-gnu-toolchain-11.3.rel1${flavor}-x86_64-arm-none-eabi.tar.xz gcc-arm-none-eabi
     patch -p0 < ${nuttx}/tools/ci/patch/arm-none-eabi-workaround-for-newlib-version-break.patch
-    rm arm-gnu-toolchain-11.3.rel1${flavor}-x86_64-arm-none-eabi.tar
+    rm arm-gnu-toolchain-11.3.rel1${flavor}-x86_64-arm-none-eabi.tar.xz
   fi
   arm-none-eabi-gcc --version
 }
@@ -221,11 +218,9 @@ function arm64-gcc-toolchain {
         ;;
     esac
     cd "${prebuilt}"
-    wget --quiet https://developer.arm.com/-/media/Files/downloads/gnu/11.2-2022.02/binrel/gcc-arm-11.2-2022.02-${flavor}-aarch64-none-elf.tar.xz
-    xz -d gcc-arm-11.2-2022.02-${flavor}-aarch64-none-elf.tar.xz
-    tar xf gcc-arm-11.2-2022.02-${flavor}-aarch64-none-elf.tar
-    mv gcc-arm-11.2-2022.02-${flavor}-aarch64-none-elf gcc-aarch64-none-elf
-    rm gcc-arm-11.2-2022.02-${flavor}-aarch64-none-elf.tar
+    curl -O -L -s https://developer.arm.com/-/media/Files/downloads/gnu/11.2-2022.02/binrel/gcc-arm-11.2-2022.02-${flavor}-aarch64-none-elf.tar.xz
+    tar xf gcc-arm-11.2-2022.02-${flavor}-aarch64-none-elf.tar.xz gcc-aarch64-none-elf
+    rm gcc-arm-11.2-2022.02-${flavor}-aarch64-none-elf.tar.xz
   fi
   aarch64-none-elf-gcc --version
 }
@@ -254,9 +249,8 @@ function riscv-gcc-toolchain {
         ;;
     esac
     cd "${prebuilt}"
-    wget --quiet https://static.dev.sifive.com/dev-tools/freedom-tools/v2020.12/riscv64-unknown-elf-toolchain-10.2.0-2020.12.8-${flavor}.tar.gz
-    tar zxf riscv64-unknown-elf-toolchain-10.2.0-2020.12.8-${flavor}.tar.gz
-    mv riscv64-unknown-elf-toolchain-10.2.0-2020.12.8-${flavor} riscv64-unknown-elf-gcc
+    curl -O -L -s https://static.dev.sifive.com/dev-tools/freedom-tools/v2020.12/riscv64-unknown-elf-toolchain-10.2.0-2020.12.8-${flavor}.tar.gz
+    tar zxf riscv64-unknown-elf-toolchain-10.2.0-2020.12.8-${flavor}.tar.gz riscv64-unknown-elf-gcc
     rm riscv64-unknown-elf-toolchain-10.2.0-2020.12.8-${flavor}.tar.gz
   fi
   riscv64-unknown-elf-gcc --version
@@ -269,15 +263,14 @@ function xtensa-esp32-gcc-toolchain {
     cd "${prebuilt}"
     case ${os} in
       Darwin)
-        wget --quiet https://dl.espressif.com/dl/xtensa-esp32-elf-gcc8_4_0-esp-2021r1-macos.tar.gz
+        curl -O -L -s https://dl.espressif.com/dl/xtensa-esp32-elf-gcc8_4_0-esp-2021r1-macos.tar.gz
         tar xzf xtensa-esp32-elf-gcc8_4_0-esp-2021r1-macos.tar.gz
         rm xtensa-esp32-elf-gcc8_4_0-esp-2021r1-macos.tar.gz
         ;;
       Linux)
-        wget --quiet https://dl.espressif.com/dl/xtensa-esp32-elf-gcc8_4_0-esp32-2021r1-linux-amd64.tar.xz
-        xz -d xtensa-esp32-elf-gcc8_4_0-esp32-2021r1-linux-amd64.tar.xz
-        tar xf xtensa-esp32-elf-gcc8_4_0-esp32-2021r1-linux-amd64.tar
-        rm xtensa-esp32-elf-gcc8_4_0-esp32-2021r1-linux-amd64.tar
+        curl -O -L -s https://dl.espressif.com/dl/xtensa-esp32-elf-gcc8_4_0-esp32-2021r1-linux-amd64.tar.xz
+        tar xf xtensa-esp32-elf-gcc8_4_0-esp32-2021r1-linux-amd64.tar.xz
+        rm xtensa-esp32-elf-gcc8_4_0-esp32-2021r1-linux-amd64.tar.xz
         ;;
     esac
   fi
@@ -305,14 +298,11 @@ function rx-gcc-toolchain {
         # Download toolchain source code
         # RX toolchain is built from source code. Once prebuilt RX toolchain is made available, the below code snippet can be removed.
         mkdir -p "${prebuilt}"/renesas-tools/rx/source; cd "${prebuilt}"/renesas-tools/rx/source
-        wget --quiet https://gcc-renesas.com/downloads/d.php?f=rx/binutils/4.8.4.201803-gnurx/rx_binutils2.24_2018Q3.tar.gz \
-          -O rx_binutils2.24_2018Q3.tar.gz
+        curl -O -L -s https://gcc-renesas.com/downloads/d.php?f=rx/binutils/4.8.4.201803-gnurx/rx_binutils2.24_2018Q3.tar.gz
         tar zxf rx_binutils2.24_2018Q3.tar.gz
-        wget --quiet https://gcc-renesas.com/downloads/d.php?f=rx/gcc/4.8.4.201803-gnurx/rx_gcc_4.8.4_2018Q3.tar.gz \
-          -O rx_gcc_4.8.4_2018Q3.tar.gz
+        curl -O -L -s https://gcc-renesas.com/downloads/d.php?f=rx/gcc/4.8.4.201803-gnurx/rx_gcc_4.8.4_2018Q3.tar.gz
         tar zxf rx_gcc_4.8.4_2018Q3.tar.gz
-        wget --quiet https://gcc-renesas.com/downloads/d.php?f=rx/newlib/4.8.4.201803-gnurx/rx_newlib2.2.0_2018Q3.tar.gz \
-          -O rx_newlib2.2.0_2018Q3.tar.gz
+        curl -O -L -s https://gcc-renesas.com/downloads/d.php?f=rx/newlib/4.8.4.201803-gnurx/rx_newlib2.2.0_2018Q3.tar.gz
         tar zxf rx_newlib2.2.0_2018Q3.tar.gz
 
         # Install binutils
@@ -353,11 +343,9 @@ function sparc-gcc-toolchain {
     case ${os} in
       Linux)
         cd "${prebuilt}"
-        wget --quiet https://www.gaisler.com/anonftp/bcc2/bin/bcc-2.1.0-gcc-linux64.tar.xz
-        xz -d bcc-2.1.0-gcc-linux64.tar.xz
-        tar xf bcc-2.1.0-gcc-linux64.tar
-        mv bcc-2.1.0-gcc sparc-gaisler-elf-gcc
-        rm bcc-2.1.0-gcc-linux64.tar
+        curl -O -L -s https://www.gaisler.com/anonftp/bcc2/bin/bcc-2.1.0-gcc-linux64.tar.xz
+        tar xf bcc-2.1.0-gcc-linux64.tar.xz sparc-gaisler-elf-gcc
+        rm bcc-2.1.0-gcc-linux64.tar.xz
         ;;
     esac
   fi
@@ -374,7 +362,7 @@ function c-cache {
         ;;
       Linux)
         cd "${prebuilt}";
-        wget https://github.com/ccache/ccache/releases/download/v3.7.7/ccache-3.7.7.tar.gz
+        curl -O -L -s https://github.com/ccache/ccache/releases/download/v3.7.7/ccache-3.7.7.tar.gz
         tar zxf ccache-3.7.7.tar.gz
         cd ccache-3.7.7; ./configure --prefix="${prebuilt}"/ccache; make; make install
         cd "${prebuilt}"; rm -rf ccache-3.7.7; rm ccache-3.7.7.tar.gz
